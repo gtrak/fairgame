@@ -58,7 +58,7 @@ AMAZON_URLS = {
 }
 CHECKOUT_URL = "https://{domain}/gp/cart/desktop/go-to-checkout.html/ref=ox_sc_proceed?partialCheckoutCart=1&isToBeGiftWrappedBefore=0&proceedToRetailCheckout=Proceed+to+checkout&proceedToCheckout=1&cartInitiateId={cart_id}"
 
-AUTOBUY_CONFIG_PATH = "config/amazon_config.json"
+AUTOBUY_CONFIG_PATH = os.getenv("AUTOBUY_CONFIG_PATH", "config/amazon_config.json")
 
 BUTTON_XPATHS = [
     '//input[@name="placeYourOrder1"]',
@@ -427,15 +427,38 @@ class Amazon:
         log.info(f'Logged in as {amazon_config["username"]}')
 
     @debug
+    def check_local_asins(self):
+        # Override the asin list with something real-time if we have it
+        import urllib.request
+        import json
+        url = 'http://gary-dell.lan:3005/amazon/live'
+        result = json.load(urllib.request.urlopen(url))
+        hits = result['hits']
+        if hits and len(hits) > 0:
+            log.info("Local hits found")
+            local_asins = [(h['asins'], h['max_price']) for h in hits]
+            return [(item, max_price) for (sublist, max_price) in local_asins for item in sublist]
+
+    @debug
     def run_asins(self, delay):
+        asin_list = self.asin_list
+
         found_asin = False
         while not found_asin:
-            for i in range(len(self.asin_list)):
-                for asin in self.asin_list[i]:
+            for i in range(len(asin_list)):
+                for asin in asin_list[i]:
                     # start_time = time.time()
                     if self.log_stock_check:
                         log.info(f"Checking ASIN: {asin}.")
-                    if self.check_stock(asin, self.reserve_min[i], self.reserve_max[i]):
+
+                    local_asins = self.check_local_asins()
+                    reserve_max = self.reserve_max[i]
+                    if local_asins and len(local_asins) > 0:
+                        asin, max_price = local_asins[0]
+                        if max_price:
+                            reserve_max = max_price
+
+                    if self.check_stock(asin, self.reserve_min[i], reserve_max):
                         return asin
                     # log.info(f"check time took {time.time()-start_time} seconds")
                     time.sleep(delay)
@@ -812,6 +835,10 @@ class Amazon:
                 or math.isclose((price_float + ship_float), reserve_min, abs_tol=0.01)
             ):
                 log.info("Item in stock and in reserve range!")
+                self.send_notification(
+                    f"Item in stock and in reserve range: https://smile.amazon.com/dp/{asin}",
+                    "offer-list",
+                    self.take_screenshots,)
                 log.info(f"{price_float} + {ship_float} shipping <= {reserve_max}")
                 log.debug(
                     f"{reserve_min} <= {price_float} + {ship_float} shipping <= {reserve_max}"
@@ -1703,6 +1730,7 @@ class Amazon:
                 prefs["profile.managed_default_content_settings.images"] = 0
             options.add_experimental_option("prefs", prefs)
             options.add_argument(f"user-data-dir={path_to_profile}")
+            options.add_argument("--disable-gpu")
             if not self.slow_mode:
                 options.set_capability("pageLoadStrategy", "none")
 

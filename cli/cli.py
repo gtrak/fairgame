@@ -28,7 +28,7 @@ from signal import SIGINT, signal
 
 import click
 
-from common.globalconfig import AMAZON_CREDENTIAL_FILE, GlobalConfig
+from common.globalconfig import GlobalConfig
 from notifications.notifications import NotificationHandler, TIME_FORMAT
 from stores.amazon import Amazon
 from utils.logger import log
@@ -229,9 +229,10 @@ def amazon(
         shutil.rmtree(global_config.get_browser_profile_path())
         log.info(f"Freed {profile_size}")
 
-    if clean_credentials and os.path.exists(AMAZON_CREDENTIAL_FILE):
-        log.info(f"Removing existing Amazon credentials from {AMAZON_CREDENTIAL_FILE}")
-        os.remove(AMAZON_CREDENTIAL_FILE)
+    credentials_file = global_config.get_credentials_file()
+    if clean_credentials and os.path.exists(credentials_file):
+        log.info(f"Removing existing Amazon credentials from {credentials_file}")
+        os.remove(credentials_file)
 
     amzn_obj = Amazon(
         headless=headless,
